@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Food Recognition Test</title>
+  <style>
+    :root{font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;}
+    body{max-width:760px;margin:36px auto;padding:18px;color:#111;background:#f7f7fb}
+    h1{font-size:20px;margin:0 0 12px}
+    .card{background:white;border-radius:10px;padding:18px;box-shadow:0 6px 20px rgba(20,20,50,0.06)}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    input[type="file"]{padding:6px}
+    #preview{max-width:360px;max-height:360px;border-radius:6px;border:1px solid #e6e6ee;margin-top:12px}
+    button{background:#2065d1;color:white;border:none;padding:10px 14px;border-radius:8px;cursor:pointer}
+    button[disabled]{opacity:.5;cursor:default}
+    #result{margin-top:16px;white-space:pre-wrap;font-weight:600}
+    .meta{font-weight:400;color:#444;margin-top:6px}
+    .small{font-size:13px;color:#666;margin-top:6px}
+    .spinner{display:inline-block;width:18px;height:18px;border:3px solid rgba(0,0,0,0.12);border-top-color:#2065d1;border-radius:50%;animation:spin 1s linear infinite;vertical-align:middle;margin-left:8px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .error{color:#B00020;font-weight:700}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Food Recognition Test</h1>
+
+    <div class="row">
+      <input id="imageInput" type="file" accept="image/*" />
+      <button id="uploadBtn" disabled>Predict</button>
+      <span id="busy" style="display:none" aria-hidden="true" class="small"><span class="spinner"></span> Đang xử lý...</span>
+    </div>
+
+    <img id="preview" src="" alt="Image Preview" style="display:none" />
+
+    <div id="info" class="small"></div>
+
+    <div id="result"></div>
+  </div>
+
+  <script>
+    const imageInput = document.getElementById('imageInput');
+    const preview = document.getElementById('preview');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const resultDiv = document.getElementById('result');
+    const infoDiv = document.getElementById('info');
+    const busy = document.getElementById('busy');
+
+    let selectedFile = null;
+    let previewUrl = null;
+
+    // Hiển thị preview ảnh
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      resultDiv.innerText = "";
+      infoDiv.innerText = "";
+      if (!file) {
+        selectedFile = null;
+        uploadBtn.disabled = true;
+        preview.style.display = "none";
+        if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+        return;
+      }
+      selectedFile = file;
+      if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+      previewUrl = URL.createObjectURL(file);
+      preview.src = previewUrl;
+      preview.style.display = "block";
+      uploadBtn.disabled = false;
+
+      // Thông tin nhỏ
+      infoDiv.innerText = `File: ${file.name} — ${Math.round(file.size/1024)} KB — ${file.type || 'unknown'}`;
+    });
+
+    // Helper: an-safe JSON parse (try .json(), fallback to text)
+    async function parseResponseSafely(response) {
+      // Try JSON first
+      try {
+        const json = await response.clone().json();
+        return { ok: response.ok, payload: json };
+      } catch (err) {
+        // Not JSON — try text
+        try {
+          const text = await response.clone().text();
+          // try to parse stringified JSON inside text
+          try {
+            const parsed = JSON.parse(text);
+            return { ok: response.ok, payload: parsed };
+          } catch (_) {
+            return { ok: response.ok, payload: text };
+          }
+        } catch (err2) {
+          return { ok: response.ok, payload: null };
+        }
+      }
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+      if (!selectedFile) {
+        alert("Vui lòng chọn ảnh trước khi dự đoán.");
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      busy.style.display = "inline-block";
+      resultDiv.innerText = "";
+      infoDiv.innerText = "Đang gửi ảnh tới server...";
+
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      try {
+        // Gọi API (điểm thay đổi: endpoint theo server của bạn)
+        const response = await fetch('https://foodserverai-production.up.railway.app/ai/recognise/', {
+          method: 'POST',
+          body: formData
+        });
+
+        const parsed = await parseResponseSafely(response);
+
+        // Debug: in raw response object vào console để kiểm tra
+        console.log('Raw fetch response object:', response);
+        console.log('Parsed payload:', parsed.payload);
+
+        if (!parsed.ok) {
+          // Nếu server trả lỗi kèm body (text hoặc json)
+          const payloadText = typeof parsed.payload === 'string' ? parsed.payload : JSON.stringify(parsed.payload);
+          resultDiv.innerHTML = `<span class="error">Server error: ${response.status} — ${payloadText}</span>`;
+          return;
+        }
+
+        // parsed.payload có thể là:
+        // 1) chính là object result (class_name, confidence, device_info)
+        // 2) object bọc { data: { ... } } (ví dụ khi dùng wrapper)
+        // 3) chuỗi hoặc khác
+        let actual = parsed.payload;
+        if (actual && typeof actual === 'object' && actual.data && typeof actual.data === 'object') {
+          actual = actual.data;
+        }
+
+        if (!actual || typeof actual !== 'object') {
+          resultDiv.innerHTML = `<span class="error">Không nhận được JSON hợp lệ từ server.</span>\n\nRaw server reply:\n${String(parsed.payload).slice(0, 800)}`;
+          return;
+        }
+
+        // Lấy các trường (dùng Number() để convert nếu server trả string)
+        const prediction = actual.class_name || actual.prediction || actual.ClassName || "Unknown";
+        const confidence = Number(actual.confidence ?? actual.Confidence ?? actual.confidence_score ?? 0) || 0;
+        const deviceInfo = actual.device_info || actual.device || null;
+
+        let deviceStr = "Unknown device";
+        if (deviceInfo && typeof deviceInfo === 'object') {
+          const name = deviceInfo.device_name || deviceInfo.device || "Unknown";
+          const cuda = (deviceInfo.cuda_available !== undefined) ? deviceInfo.cuda_available : (deviceInfo.cuda ? deviceInfo.cuda : "Unknown");
+          deviceStr = `${name} (CUDA: ${cuda})`;
+        }
+
+        // Hiển thị kết quả rõ ràng
+        resultDiv.innerText =
+          `Prediction: ${prediction}\n` +
+          `Confidence: ${(confidence * 100).toFixed(2)}%\n` +
+          `Device: ${deviceStr}`;
+
+      } catch (err) {
+        console.error('Fetch error:', err);
+        resultDiv.innerHTML = `<span class="error">Lỗi kết nối hoặc lỗi nội bộ: ${err && err.message ? err.message : String(err)}</span>`;
+      } finally {
+        busy.style.display = "none";
+        uploadBtn.disabled = false;
+      }
+    });
+
+    // Dọn URL object khi unload để tránh rò rỉ
+    window.addEventListener('beforeunload', () => {
+      if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+    });
+  </script>
+</body>
+</html>
