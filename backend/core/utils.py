@@ -27,11 +27,11 @@ IMG_SIZE = 224
 CLASS_NAMES = [
     "Banh mi", "Banh xeo", "Bun bo Hue", "Bun dau mam tom",
     "Bun thit nuong", "Cao lau", "Com tam", "Goi cuon",
-    "Hu tieu", "Mi quang"
+    "Hu tieu", "Mi quang","Pho"
 ]
 
 HF_REPO = "TuanVu219/Vit_Checkpoint_New"
-HF_CKPT_FILENAME = "resnet50v2_scratch_attention (1).keras"
+HF_CKPT_FILENAME = "resnet50v2_121.h5"
 
 # -----------------------------
 # 3️⃣ Download & load model trực tiếp từ HF
