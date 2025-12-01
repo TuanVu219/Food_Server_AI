@@ -31,7 +31,7 @@ CLASS_NAMES = [
 ]
 
 HF_REPO = "TuanVu219/Vit_Checkpoint_New"
-HF_CKPT_FILENAME = "resnet50v2_new_v2.keras"
+HF_CKPT_FILENAME = "resnet50v2_scratch_attention (1).keras"
 
 # -----------------------------
 # 3️⃣ Download & load model trực tiếp từ HF
